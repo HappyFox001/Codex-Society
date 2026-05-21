@@ -1,8 +1,17 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CodexCliBackend } from "../api/backends.js";
+import type { ChatBackend } from "../api/types.js";
 import type { RunManifest } from "./artifacts.js";
 
-export async function generateReport(runDirectory: string): Promise<string> {
+export interface GenerateReportOptions {
+  ai?: boolean;
+  model?: string;
+  cwd?: string;
+  backend?: ChatBackend;
+}
+
+export async function generateReport(runDirectory: string, options: GenerateReportOptions = {}): Promise<string> {
   const manifest = JSON.parse(await readFile(join(runDirectory, "run.json"), "utf8")) as RunManifest;
   const metrics = JSON.parse(await readFile(join(runDirectory, "metrics.json"), "utf8")) as {
     tick: number;
@@ -10,7 +19,21 @@ export async function generateReport(runDirectory: string): Promise<string> {
     agentCount: number;
     relationCount: number;
   };
-  const report = `# Society Run Report
+  const basicReport = basicRunReport(manifest, metrics);
+  const report = options.ai
+    ? await generateAiReport(runDirectory, basicReport, options).catch((error: unknown) => `${basicReport}
+
+## AI Report
+
+AI report generation failed: ${error instanceof Error ? error.message : String(error)}
+`)
+    : basicReport;
+  await writeFile(join(runDirectory, "REPORT.md"), report, "utf8");
+  return report;
+}
+
+function basicRunReport(manifest: RunManifest, metrics: { tick: number; eventCount: number; agentCount: number; relationCount: number }): string {
+  return `# Society Run Report
 
 Run: \`${manifest.id}\`
 
@@ -37,6 +60,157 @@ Model: \`${manifest.model}\`
 - \`graph.json\`
 - \`metrics.json\`
 `;
-  await writeFile(join(runDirectory, "REPORT.md"), report, "utf8");
-  return report;
+}
+
+async function generateAiReport(runDirectory: string, basicReport: string, options: GenerateReportOptions): Promise<string> {
+  const backend = options.backend ?? new CodexCliBackend({ defaultCwd: options.cwd, timeoutMs: 180_000 });
+  const digest = await buildReportDigest(runDirectory);
+  const raw = await backend.complete({
+    model: options.model ?? "codex-default",
+    cwd: options.cwd,
+    sandbox: "danger-full-access",
+    timeoutMs: 180_000,
+    prompt: [
+      "You are generating the final report for a Codex Society simulation.",
+      "Write a detailed Markdown report that answers the simulation's core objective, not a generic run log.",
+      "Use the provided artifacts as evidence. Do not invent facts outside the artifacts.",
+      "",
+      "The report must include these sections:",
+      "1. Executive Answer",
+      "2. Core Objective",
+      "3. Final Recommendation",
+      "4. Key Findings",
+      "5. Agent-by-Agent Contributions",
+      "6. Interaction and Influence Path",
+      "7. Meaningful Data",
+      "8. Evidence From Events",
+      "9. Residual Uncertainty",
+      "10. Artifact Index",
+      "",
+      "Requirements:",
+      "- Be specific and data-rich.",
+      "- Cite tick numbers, agent ids, event counts, action types, and concrete state changes when available.",
+      "- Highlight public vs targeted/private communication if present.",
+      "- The Executive Answer must directly answer the planning question.",
+      "- Keep it readable as a final simulation result, not as developer documentation.",
+      "- Return Markdown only.",
+      "",
+      "Basic run report:",
+      basicReport,
+      "",
+      "Simulation artifact digest:",
+      JSON.stringify(digest),
+    ].join("\n"),
+  });
+  return normalizeBackendContent(raw);
+}
+
+async function buildReportDigest(runDirectory: string): Promise<unknown> {
+  const manifest = JSON.parse(await readFile(join(runDirectory, "run.json"), "utf8")) as RunManifest;
+  const metrics = JSON.parse(await readFile(join(runDirectory, "metrics.json"), "utf8")) as unknown;
+  const graph = JSON.parse(await readFile(join(runDirectory, "graph.json"), "utf8")) as unknown;
+  const timeline = JSON.parse(await readFile(join(runDirectory, "timeline.json"), "utf8")) as unknown[];
+  const tickNames = (await readdir(join(runDirectory, "ticks"))).filter((name) => name.endsWith(".json")).sort(naturalSort);
+  const ticks = [];
+  for (const name of tickNames) {
+    const tick = JSON.parse(await readFile(join(runDirectory, "ticks", name), "utf8")) as {
+      tick: number;
+      decisions: Array<{ agentId: string; decision: { thought: string; actions: Array<Record<string, unknown>> } }>;
+      events: Array<Record<string, unknown>>;
+    };
+    ticks.push({
+      tick: tick.tick,
+      decisions: tick.decisions.map((item) => ({
+        agentId: item.agentId,
+        thought: item.decision.thought,
+        actions: item.decision.actions.map(summarizeAction),
+      })),
+      events: tick.events.map(summarizeEvent),
+    });
+  }
+  const latestSnapshotName = (await readdir(join(runDirectory, "snapshots"))).filter((name) => name.endsWith(".json")).sort(naturalSort).at(-1);
+  const latestSnapshot = latestSnapshotName
+    ? JSON.parse(await readFile(join(runDirectory, "snapshots", latestSnapshotName), "utf8")) as {
+      tick: number;
+      agents: unknown[];
+      entities: unknown[];
+      relations: unknown[];
+      events: unknown[];
+      memory: unknown;
+    }
+    : undefined;
+
+  return {
+    manifest,
+    metrics,
+    graph,
+    timeline,
+    ticks,
+    finalSnapshot: latestSnapshot
+      ? {
+        tick: latestSnapshot.tick,
+        agents: latestSnapshot.agents,
+        entities: latestSnapshot.entities,
+        relations: latestSnapshot.relations,
+        memory: latestSnapshot.memory,
+        eventCount: latestSnapshot.events.length,
+      }
+      : undefined,
+  };
+}
+
+function summarizeAction(action: Record<string, unknown>): Record<string, unknown> {
+  return compactObject({
+    type: action.type,
+    targetId: action.targetId,
+    entityId: action.entityId,
+    visibility: action.visibility,
+    message: truncateText(action.message),
+    fact: truncateText(action.fact),
+    patch: action.patch,
+    trustDelta: action.trustDelta,
+    affinityDelta: action.affinityDelta,
+    reason: truncateText(action.reason),
+  });
+}
+
+function summarizeEvent(event: Record<string, unknown>): Record<string, unknown> {
+  const payload = event.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {};
+  return compactObject({
+    id: event.id,
+    tick: event.tick,
+    type: event.type,
+    actorId: event.actorId,
+    targetId: event.targetId,
+    visibility: event.visibility,
+    visibleTo: event.visibleTo,
+    message: truncateText(payload.message),
+    fact: truncateText(payload.fact),
+    patch: payload.patch,
+    trustDelta: payload.trustDelta,
+    affinityDelta: payload.affinityDelta,
+    reason: truncateText(payload.reason),
+  });
+}
+
+function compactObject(input: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+}
+
+function truncateText(value: unknown, max = 500): unknown {
+  return typeof value === "string" && value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
+function naturalSort(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function normalizeBackendContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as { content?: unknown };
+    if (typeof parsed.content === "string") return parsed.content;
+  } catch {
+    return content;
+  }
+  return content;
 }

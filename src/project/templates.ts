@@ -32,8 +32,8 @@ function baseConfig(name: TemplateName, description: string): SocietyConfig {
   return {
     name,
     description,
-    backend: "static",
-    model: "society-static",
+    backend: "codex",
+    model: "codex-default",
     scheduler: "round-robin",
     continueOnAgentError: true,
     logLevel: "normal",

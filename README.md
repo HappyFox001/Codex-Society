@@ -6,16 +6,73 @@ The current implementation follows route one from the design note: Codex or any 
 
 ## CLI Quick Start
 
+Recommended interactive mode:
+
 ```bash
-npm install
-npm run build
-npm run cli -- init --template campus
-npm run cli -- doctor
-npm run cli -- run --ticks 5 --backend static
-npm run cli -- report
+pnpm install
+pnpm run cli
 ```
 
-After `npm run build`, the package exposes two bin names:
+This opens the simulation target workbench:
+
+```text
+Codex Society
+Simulation target workbench
+Use the menu to run an existing target or create a new target template.
+
+Choose action
+  1  Simulate target
+  2  Create target template
+  3  List targets
+  4  Exit
+Select [1]:
+```
+
+Menu flow:
+
+```text
+Simulate target -> choose a target from simulations/ -> choose ticks -> run
+Create target template -> enter id/title/description -> write simulations/<id>/
+```
+
+Command mode remains available for automation:
+
+```bash
+pnpm install
+pnpm run build
+pnpm run cli -- init --template campus
+pnpm run cli -- doctor
+pnpm run cli -- run --ticks 5 --backend codex
+pnpm run cli -- report
+```
+
+## Simulation Targets
+
+Targets live under `simulations/`. The first target is Trump-side China pre-visit planning.
+
+Run it from the shell:
+
+```bash
+pnpm run cli
+```
+
+Then choose `Simulate target`, select `trump-china-previsit`, and accept or edit the tick count.
+
+Interactive simulation artifacts are saved under:
+
+```text
+runs/<target-id>/<run-id>/
+```
+
+For example:
+
+```text
+runs/trump-china-previsit/run_20260521_064849/
+```
+
+The main human-readable output is `REPORT.md`. For Codex-backed runs, this report is generated after the simulation by reading the run artifacts and answering the target's core objective with concrete evidence from agent decisions, events, relations and state changes.
+
+After `pnpm run build`, the package exposes two bin names:
 
 ```text
 codex-society
@@ -27,7 +84,7 @@ Core commands:
 ```text
 codex-society init --template campus
 codex-society doctor
-codex-society run --ticks 5 --backend static --save
+codex-society run --ticks 5 --backend codex --save
 codex-society observe alice --json
 codex-society report <run-id>
 codex-society replay <run-id>
@@ -56,7 +113,9 @@ society/
 SOCIETY_GUIDE.md
 ```
 
-Run artifacts are stored under `.society/runs/<run-id>/` as JSON/JSONL/Markdown files, so CLI runs are recoverable and scriptable without a frontend.
+Interactive target runs are stored under `runs/<target-id>/<run-id>/` as JSON/JSONL/Markdown files, so CLI runs are recoverable and scriptable without a frontend. The `runs/` directory is ignored by git.
+
+For Codex-backed target runs, `REPORT.md` is an AI-generated result report. The raw evidence remains available in `events.jsonl`, `ticks/*.json`, `decisions/*/*.json`, `timeline.json`, `graph.json`, and `metrics.json`.
 
 ## Structure
 
@@ -70,6 +129,7 @@ src/core
 
 src/runtime
   agent-runtime.ts  Runtime interface for LLM/Codex adapters
+  codex-cli-runtime.ts
   openai-compatible-runtime.ts
   rule-based-runtime.ts
 
@@ -86,30 +146,30 @@ src/cli
 ## Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Validate types:
 
 ```bash
-npm run typecheck
+pnpm run typecheck
 ```
 
 Build declarations and JavaScript:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 ## OpenAI-Compatible Gateway
 
 The SDK includes a small HTTP gateway so simulator runtimes can talk to Codex, local models, or normal model providers through one OpenAI-style contract.
 
-Start the default static backend:
+Start the gateway:
 
 ```bash
-npm run api
+pnpm run api
 ```
 
 Available endpoints:
@@ -123,13 +183,12 @@ POST /v1/responses
 Use the Codex CLI backend:
 
 ```bash
-CODEX_SOCIETY_BACKEND=codex npm run api
+CODEX_SOCIETY_BACKEND=codex pnpm run api
 ```
 
 Codex backend defaults to unattended full-access execution:
 
 ```text
---ask-for-approval never
 --dangerously-bypass-approvals-and-sandbox
 --sandbox danger-full-access
 ```
@@ -141,17 +200,18 @@ PORT=8787
 HOST=127.0.0.1
 CODEX_SOCIETY_API_KEY=optional-bearer-token
 CODEX_SOCIETY_BACKEND=static | echo | codex
+CODEX_SOCIETY_RUNS_DIR=/path/to/output-runs
 CODEX_SOCIETY_CODEX_CWD=/path/to/workspace
 CODEX_SOCIETY_CODEX_SANDBOX=danger-full-access
 CODEX_SOCIETY_CODEX_TIMEOUT_MS=120000
 ```
 
-The simulator can call any compatible gateway through `OpenAiCompatibleRuntime`:
+The normal CLI simulation path calls Codex directly through `CodexCliRuntime`. The simulator can also call any compatible gateway through `OpenAiCompatibleRuntime`:
 
 ```ts
 const runtime = new OpenAiCompatibleRuntime({
   baseUrl: "http://127.0.0.1:8787",
-  model: "society-static",
+  model: "codex-default",
 });
 ```
 

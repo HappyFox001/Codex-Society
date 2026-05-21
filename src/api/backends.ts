@@ -39,7 +39,7 @@ export interface CodexCliBackendOptions {
 
 export class CodexCliBackend implements ChatBackend {
   readonly id = "codex-cli";
-  readonly models = ["gpt-5-codex", "gpt-5"];
+  readonly models = ["codex-default", "gpt-5", "gpt-5-codex"];
 
   private readonly command: string;
   private readonly defaultCwd: string;
@@ -95,13 +95,12 @@ function runCodexExec(options: {
       "--skip-git-repo-check",
       "--color",
       "never",
-      "--model",
-      options.model,
-      "--ask-for-approval",
-      "never",
       "--dangerously-bypass-approvals-and-sandbox",
       "--sandbox",
       options.sandbox,
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--ephemeral",
       "--cd",
       options.cwd,
       "--output-schema",
@@ -110,6 +109,9 @@ function runCodexExec(options: {
       options.outputPath,
       "-",
     ];
+    if (options.model !== "codex-default") {
+      args.splice(5, 0, "--model", options.model);
+    }
 
     const child = spawn(options.command, args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -138,11 +140,21 @@ function runCodexExec(options: {
         resolve();
         return;
       }
-      reject(new Error(`Codex CLI exited with code ${code}: ${stderr.trim()}`));
+      reject(new Error(`Codex CLI exited with code ${code}: ${summarizeCodexStderr(stderr)}`));
     });
 
     child.stdin.end(options.prompt);
   });
+}
+
+function summarizeCodexStderr(stderr: string): string {
+  const usefulLines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith("<") && !line.includes("<html>") && !line.includes("<svg"))
+    .filter((line) => !line.includes("WARN codex_core_plugins") && !line.includes("WARN codex_core_skills"));
+  return usefulLines.slice(-12).join("\n") || "no stderr output";
 }
 
 function textResponseSchema() {

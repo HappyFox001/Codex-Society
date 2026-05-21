@@ -1,0 +1,202 @@
+{
+  "name": "trump-china-previsit",
+  "description": "Pre-visit negotiation planning simulation for a Trump team China visit. The society contains only the U.S./Trump-side preparation group and models what agenda they should prioritize before the visit.",
+  "config": {
+    "name": "trump-china-previsit",
+    "description": "Trump-side pre-visit negotiation planning based on public reporting before the May 14-15, 2026 China visit.",
+    "backend": "codex",
+    "model": "codex-default",
+    "scheduler": "round-robin",
+    "continueOnAgentError": true,
+    "logLevel": "normal",
+    "codex": {
+      "sandbox": "danger-full-access",
+      "approval": "never",
+      "fullAccess": true,
+      "timeoutMs": 120000
+    }
+  },
+  "world": {
+    "tick": 0,
+    "publicFacts": [
+      "This is a pre-visit planning simulation, not a post-visit outcome analysis.",
+      "Public reporting before the Beijing meetings pointed to trade truce maintenance, tariff relief, rare earths, fentanyl enforcement, agricultural and energy purchases, Boeing aircraft orders, U.S. business access, AI and advanced technology, Taiwan risk, Iran war spillovers, and nuclear weapons as likely discussion areas.",
+      "The simulation intentionally includes only Trump-side roles. It does not include Chinese officials or Chinese counterpart personas."
+    ],
+    "state": {
+      "caseDate": "2026-05-13",
+      "visitWindow": "2026-05-14 to 2026-05-15",
+      "planningQuestion": "Before the visit, what should the Trump-side delegation prioritize in negotiation planning?",
+      "sourceBasis": [
+        "Reuters preview: Iran, Taiwan, AI, nuclear weapons, critical minerals, trade and investment forums, Boeing, agriculture, and energy.",
+        "Reuters pre-summit trade reporting: trade truce, tariffs, fentanyl, soybeans, rare earths.",
+        "AP/CBS previews: Iran war, trade, U.S. business access, Taiwan arms-sale sensitivity, commercial agreements."
+      ]
+    }
+  },
+  "agents": [
+    {
+      "id": "trump",
+      "name": "Donald Trump",
+      "role": "principal negotiator",
+      "personality": "transactional, deal-focused, optics-sensitive, prefers concrete announcements",
+      "goal": "shape a visit agenda that can produce visible wins without surrendering core leverage",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "Public reports say the visit agenda may include trade, Iran, Taiwan, AI and nuclear weapons.",
+          "A narrow commercial announcement can be easier to sell publicly than an abstract framework."
+        ],
+        "notes": []
+      }
+    },
+    {
+      "id": "treasury_lead",
+      "name": "Treasury Lead",
+      "role": "trade and investment coordinator",
+      "personality": "structured, market-aware, risk-calibrated",
+      "goal": "turn tariff and investment issues into a sequenced negotiation package",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "Public reporting described mechanisms to support future bilateral trade and investment.",
+          "Tariff leverage may be politically and legally constrained."
+        ],
+        "notes": []
+      }
+    },
+    {
+      "id": "ustr_negotiator",
+      "name": "USTR Negotiator",
+      "role": "tariff and market-access negotiator",
+      "personality": "precise, leverage-oriented, skeptical of vague commitments",
+      "goal": "define enforceable asks on tariff relief, market access, purchase commitments, and compliance checkpoints",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "The previous trade truce involved tariff reductions, fentanyl action, soybean purchases and rare earth export flows.",
+          "Commercial deliverables mentioned in public reporting include Boeing, agriculture and energy."
+        ],
+        "notes": []
+      }
+    },
+    {
+      "id": "strategic_risk",
+      "name": "Strategic Risk Adviser",
+      "role": "security and geopolitical risk adviser",
+      "personality": "cautious, scenario-driven, hawkish on risk controls",
+      "goal": "prevent trade deliverables from creating unacceptable Taiwan, technology, or security concessions",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "Public previews identified Taiwan, AI and nuclear weapons as agenda items.",
+          "Any Taiwan-related ambiguity can dominate a commercial summit if not bounded before talks."
+        ],
+        "notes": []
+      }
+    },
+    {
+      "id": "business_liaison",
+      "name": "Business Delegation Liaison",
+      "role": "commercial delegation coordinator",
+      "personality": "pragmatic, industry-facing, announcement-driven",
+      "goal": "aggregate business priorities into a short list of achievable visit deliverables",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "Public reporting said U.S. executives were seeking resolution of China-related business issues.",
+          "Likely commercial tracks include aircraft, agriculture, energy and market access."
+        ],
+        "notes": []
+      }
+    },
+    {
+      "id": "communications_director",
+      "name": "Communications Director",
+      "role": "message and outcome framing lead",
+      "personality": "concise, optics-focused, sensitive to domestic political backlash",
+      "goal": "convert the negotiation plan into a public narrative of strength, jobs and concrete wins",
+      "toolPermissions": ["say", "remember", "updateRelation", "updateEntity", "noop"],
+      "memory": {
+        "facts": [
+          "Public reporting emphasized the political need for concrete announcements.",
+          "The agenda should avoid looking like concessions made for pageantry."
+        ],
+        "notes": []
+      }
+    }
+  ],
+  "relations": [
+    { "from": "trump", "to": "treasury_lead", "kind": "manager", "trust": 24, "affinity": 12 },
+    { "from": "trump", "to": "ustr_negotiator", "kind": "manager", "trust": 20, "affinity": 8 },
+    { "from": "trump", "to": "communications_director", "kind": "manager", "trust": 26, "affinity": 18 },
+    { "from": "treasury_lead", "to": "ustr_negotiator", "kind": "partner", "trust": 22, "affinity": 12 },
+    { "from": "business_liaison", "to": "treasury_lead", "kind": "partner", "trust": 18, "affinity": 10 },
+    { "from": "strategic_risk", "to": "ustr_negotiator", "kind": "ally", "trust": 14, "affinity": 4 },
+    { "from": "communications_director", "to": "business_liaison", "kind": "partner", "trust": 16, "affinity": 10 }
+  ],
+  "entities": [
+    {
+      "id": "agenda_board",
+      "type": "planning-board",
+      "name": "Pre-Visit Agenda Board",
+      "visibility": "public",
+      "state": {
+        "draftPriorityOrder": [
+          "Maintain trade truce and avoid tariff escalation",
+          "Secure commercial deliverables: aircraft, agriculture, energy",
+          "Protect rare earth and critical mineral supply stability",
+          "Obtain fentanyl enforcement commitments",
+          "Frame U.S. business access and AI/technology constraints",
+          "Bound Taiwan and security-risk language",
+          "Discuss Iran-war spillover and nuclear risk at a strategic level"
+        ],
+        "openQuestion": "Which agenda items should be linked as tradeable package components, and which should be firewalled?"
+      }
+    },
+    {
+      "id": "risk_register",
+      "type": "risk-register",
+      "name": "Negotiation Risk Register",
+      "visibility": "public",
+      "state": {
+        "risks": [
+          "Overpromising commercial purchases without enforceable timelines",
+          "Allowing Taiwan language to crowd out trade deliverables",
+          "Trading export-control flexibility for vague market-access promises",
+          "Returning with pageantry but no measurable commitments",
+          "Domestic criticism if tariff relief appears one-sided"
+        ]
+      }
+    },
+    {
+      "id": "private_message_plan",
+      "type": "private-note",
+      "name": "Communications Private Framing Notes",
+      "visibility": "agent",
+      "visibleTo": ["communications_director", "trump"],
+      "state": {
+        "message": "Frame outcomes as jobs, farmer exports, aircraft orders, lower inflation pressure, and supply-chain stability."
+      }
+    }
+  ],
+  "goals": [
+    {
+      "id": "agenda-intelligence",
+      "title": "Identify likely negotiation agenda",
+      "description": "Have the Trump-side team converge on likely visit-before negotiation priorities from public reporting.",
+      "priority": 1,
+      "successCondition": "A run report should surface a prioritized agenda and the core tradeoffs among trade, commercial, security and communications objectives.",
+      "deadlineTick": 6
+    }
+  ],
+  "scenarios": [
+    {
+      "name": "previsit-briefing",
+      "description": "Six-tick internal preparation meeting before the China visit.",
+      "ticks": 6,
+      "stopWhen": "tick",
+      "inject": []
+    }
+  ]
+}

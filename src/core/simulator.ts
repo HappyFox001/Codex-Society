@@ -11,6 +11,9 @@ export interface SimulatorOptions {
   projector?: ObservationProjector;
   schedule?: SchedulePlan;
   continueOnAgentError?: boolean;
+  onAgentStart?: (event: { tick: number; agentId: AgentId }) => void | Promise<void>;
+  onAgentDecision?: (event: { tick: number; agentId: AgentId; decision: AgentDecision; events: WorldEvent[] }) => void | Promise<void>;
+  onAgentError?: (event: { tick: number; agentId: AgentId; error: unknown }) => void | Promise<void>;
 }
 
 export class SocietySimulator {
@@ -19,6 +22,9 @@ export class SocietySimulator {
   private readonly projector: ObservationProjector;
   private readonly schedule: SchedulePlan;
   private readonly continueOnAgentError: boolean;
+  private readonly onAgentStart?: SimulatorOptions["onAgentStart"];
+  private readonly onAgentDecision?: SimulatorOptions["onAgentDecision"];
+  private readonly onAgentError?: SimulatorOptions["onAgentError"];
 
   constructor(options: SimulatorOptions) {
     this.world = options.world;
@@ -26,6 +32,9 @@ export class SocietySimulator {
     this.projector = options.projector ?? new DefaultObservationProjector();
     this.schedule = options.schedule ?? new RoundRobinSchedule();
     this.continueOnAgentError = options.continueOnAgentError ?? false;
+    this.onAgentStart = options.onAgentStart;
+    this.onAgentDecision = options.onAgentDecision;
+    this.onAgentError = options.onAgentError;
   }
 
   async runTicks(count: number): Promise<SimulationReport[]> {
@@ -45,18 +54,23 @@ export class SocietySimulator {
 
     for (const agentId of activeAgentIds) {
       try {
+        await this.onAgentStart?.({ tick, agentId });
         const decision = await this.decide(agentId);
         decisions.push({ agentId, decision });
 
+        const agentEvents: WorldEvent[] = [];
         for (const action of decision.actions) {
           const parsed = actionSchema.parse(action);
           this.assertActionAllowed(agentId, parsed.type);
           const event = this.world.applyAction(agentId, parsed);
           if (event) {
+            agentEvents.push(event);
             emittedEvents.push(event);
           }
         }
+        await this.onAgentDecision?.({ tick, agentId, decision, events: agentEvents });
       } catch (error) {
+        await this.onAgentError?.({ tick, agentId, error });
         if (!this.continueOnAgentError) {
           throw error;
         }
