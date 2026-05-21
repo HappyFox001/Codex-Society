@@ -41,6 +41,61 @@ Build declarations and JavaScript:
 npm run build
 ```
 
+## OpenAI-Compatible Gateway
+
+The SDK includes a small HTTP gateway so simulator runtimes can talk to Codex, local models, or normal model providers through one OpenAI-style contract.
+
+Start the default static backend:
+
+```bash
+npm run api
+```
+
+Available endpoints:
+
+```text
+GET  /v1/models
+POST /v1/chat/completions
+POST /v1/responses
+```
+
+Use the Codex CLI backend:
+
+```bash
+CODEX_SOCIETY_BACKEND=codex npm run api
+```
+
+Codex backend defaults to unattended full-access execution:
+
+```text
+--ask-for-approval never
+--dangerously-bypass-approvals-and-sandbox
+--sandbox danger-full-access
+```
+
+Useful environment variables:
+
+```text
+PORT=8787
+HOST=127.0.0.1
+CODEX_SOCIETY_API_KEY=optional-bearer-token
+CODEX_SOCIETY_BACKEND=static | echo | codex
+CODEX_SOCIETY_CODEX_CWD=/path/to/workspace
+CODEX_SOCIETY_CODEX_SANDBOX=danger-full-access
+CODEX_SOCIETY_CODEX_TIMEOUT_MS=120000
+```
+
+The simulator can call any compatible gateway through `OpenAiCompatibleRuntime`:
+
+```ts
+const runtime = new OpenAiCompatibleRuntime({
+  baseUrl: "http://127.0.0.1:8787",
+  model: "society-static",
+});
+```
+
+This keeps the shape future-proof: the simulator depends on an OpenAI-compatible API, while Codex-specific execution is isolated behind a backend adapter.
+
 ## Core Loop
 
 ```text
@@ -55,7 +110,7 @@ WorldState snapshot
 
 ## Runtime Extension
 
-To connect Codex Thread Runtime, OpenAI SDK, or another LLM executor, implement `AgentRuntime`:
+To connect Codex Thread Runtime, OpenAI SDK, or another LLM executor directly, implement `AgentRuntime`:
 
 ```ts
 import type { AgentRuntime, AgentDecision, Observation } from "codex-society";

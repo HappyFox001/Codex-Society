@@ -6,6 +6,7 @@
   "description": "A TypeScript SDK for running multi-agent social simulations with pluggable agent runtimes.",
   "scripts": {
     "dev": "tsx src/examples/run-society.ts",
+    "api": "tsx src/api/server.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
