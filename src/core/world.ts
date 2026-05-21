@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 
 export interface WorldConfig {
+  tick?: number;
   agents: AgentProfile[];
   entities?: WorldEntity[];
   relations?: Relation[];
@@ -27,6 +28,7 @@ export class WorldState {
   private readonly events: WorldEvent[] = [];
 
   constructor(config: WorldConfig) {
+    this.tickValue = config.tick ?? 0;
     for (const agent of config.agents) {
       this.agents.set(agent.id, agent);
       this.memory.set(agent.id, config.memory?.[agent.id] ?? { facts: [], notes: [] });
