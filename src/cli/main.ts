@@ -15,18 +15,21 @@ import {
 import { DefaultObservationProjector } from "../core/observation.js";
 import { OneAgentPerTickSchedule, RoundRobinSchedule } from "../core/scheduler.js";
 import {
+  acquireRunLock,
   createRunId,
   finishRun,
   latestRunId,
+  releaseRunLock,
   runDir,
   startRun,
+  writeRunError,
   writeDerivedArtifacts,
   writeTickArtifact,
   type RunManifest,
 } from "../project/artifacts.js";
 import { generateReport } from "../project/report.js";
 import { agentFileSchema, entityFileSchema, relationFileSchema } from "../project/schemas.js";
-import { getTemplate, listTemplates } from "../project/templates.js";
+import { getTemplate, listTemplates, type SocietyTemplate } from "../project/templates.js";
 import { exists, initProject, loadProject, readJson, saveProjectWorld, SOCIETY_DIR, toWorldState, writeJson } from "../project/store.js";
 
 const program = new Command();
@@ -44,10 +47,13 @@ program
   .command("init")
   .description("create a society project")
   .option("-t, --template <name>", "template name", "minimal")
+  .option("--template-dir <path>", "directory containing template.json")
   .option("--dry-run", "show files without writing")
   .action(async (options) => {
     const root = process.cwd();
-    const template = getTemplate(options.template);
+    const template = options.templateDir
+      ? (await readJson(join(resolve(options.templateDir), "template.json")) as SocietyTemplate)
+      : getTemplate(options.template);
     const files = await initProject(root, template, { dryRun: options.dryRun });
     output({ created: files }, options.dryRun ? `Would create ${files.length} files.` : `Created ${pc.green(template.name)} society project.`);
   });
@@ -84,6 +90,7 @@ program
   .option("--resume <runId>", "resume a previous run")
   .option("--until <mode>", "goal|tick|event|timeout", "tick")
   .option("--full-access", "run Codex backend with full access")
+  .option("--clear-stale-lock", "clear stale run lock before running")
   .action(async (options) => {
     const project = await loadProject(process.cwd());
     const scenario = options.scenario ? project.scenarios.find((item) => item.name === options.scenario) : undefined;
@@ -104,10 +111,18 @@ program
       schedule: project.config.scheduler === "one-agent-per-tick" ? new OneAgentPerTickSchedule() : new RoundRobinSchedule(),
     });
     const runId = options.resume ?? createRunId();
+    let lockPath: string | undefined;
+    let interrupted = false;
     const manifest: RunManifest = { id: runId, status: "running", backend, model, ticksRequested: ticks, startedAt: new Date().toISOString() };
+    lockPath = await acquireRunLock(process.cwd(), runId, Boolean(options.clearStaleLock));
     const dir = await startRun(process.cwd(), manifest);
+    const onSigint = () => {
+      interrupted = true;
+    };
+    process.once("SIGINT", onSigint);
     try {
       for (let i = 0; i < ticks; i += 1) {
+        if (interrupted) break;
         const report = await simulator.runTick();
         const snapshot = simulator.snapshot();
         await writeTickArtifact(dir, report, snapshot);
@@ -116,12 +131,16 @@ program
       await saveProjectWorld(process.cwd(), world);
       const snapshot = simulator.snapshot();
       await writeDerivedArtifacts(dir, snapshot);
-      await finishRun(dir, { status: "completed", endedAt: new Date().toISOString() });
+      await finishRun(dir, { status: interrupted ? "interrupted" : "completed", endedAt: new Date().toISOString() });
       await generateReport(dir);
-      output({ runId, dir }, `Completed ${pc.green(runId)} at ${dir}`);
+      output({ runId, dir, interrupted }, `${interrupted ? "Interrupted" : "Completed"} ${pc.green(runId)} at ${dir}`);
     } catch (error) {
+      await writeRunError(dir, error);
       await finishRun(dir, { status: "failed", endedAt: new Date().toISOString(), error: errorMessage(error) });
       throw error;
+    } finally {
+      process.off("SIGINT", onSigint);
+      await releaseRunLock(lockPath);
     }
   });
 
@@ -219,10 +238,29 @@ program.command("ping").description("test gateway health").option("--gateway <ur
 const agent = program.command("agent").description("manage agents");
 agent.command("list").action(async () => output((await loadProject(process.cwd())).agents));
 agent.command("show").argument("<id>").action(async (id) => output(findById((await loadProject(process.cwd())).agents, id)));
-agent.command("create").requiredOption("--id <id>").requiredOption("--name <name>").requiredOption("--role <role>").requiredOption("--personality <text>").requiredOption("--goal <goal>").action(async (options) => {
+agent.command("create").requiredOption("--id <id>").requiredOption("--name <name>").requiredOption("--role <role>").requiredOption("--personality <text>").requiredOption("--goal <goal>").option("--dry-run", "preview without writing").action(async (options) => {
   const parsed = agentFileSchema.parse({ ...options, toolPermissions: ["say", "remember", "updateRelation", "updateEntity", "noop"], memory: { facts: [], notes: [] } });
+  if (options.dryRun) {
+    output(parsed, JSON.stringify(parsed, null, 2));
+    return;
+  }
   await writeJson(join(process.cwd(), SOCIETY_DIR, "agents", `${parsed.id}.json`), parsed);
   output(parsed, `Created agent ${pc.green(parsed.id)}`);
+});
+agent.command("edit").argument("<id>").requiredOption("--set <path>").requiredOption("--value <json>").action(async (id, options) => {
+  const path = join(process.cwd(), SOCIETY_DIR, "agents", `${id}.json`);
+  const current = agentFileSchema.parse(await readJson(path));
+  const next = agentFileSchema.parse(setPath(current, options.set, JSON.parse(options.value)));
+  await writeJson(path, next);
+  output(next, `Updated agent ${id}`);
+});
+agent.command("import").argument("<file>").action(async (file) => {
+  const parsed = agentFileSchema.parse(await readJson(resolve(file)));
+  await writeJson(join(process.cwd(), SOCIETY_DIR, "agents", `${parsed.id}.json`), parsed);
+  output(parsed, `Imported agent ${parsed.id}`);
+});
+agent.command("export").argument("<id>").action(async (id) => {
+  output(agentFileSchema.parse(await readJson(join(process.cwd(), SOCIETY_DIR, "agents", `${id}.json`))));
 });
 agent.command("remove").argument("<id>").action(async (id) => {
   const path = join(process.cwd(), SOCIETY_DIR, "agents", `${id}.json`);
@@ -249,10 +287,14 @@ agent.command("permissions").argument("<id>").argument("[permissions...]").actio
 
 const relation = program.command("relation").description("manage relations");
 relation.command("list").action(async () => output((await loadProject(process.cwd())).relations));
-relation.command("set").argument("<from>").argument("<to>").option("--kind <kind>", "relation kind", "stranger").option("--trust <n>", "trust", parseIntOption, 0).option("--affinity <n>", "affinity", parseIntOption, 0).action(async (from, to, options) => {
+relation.command("set").argument("<from>").argument("<to>").option("--kind <kind>", "relation kind", "stranger").option("--trust <n>", "trust", parseIntOption, 0).option("--affinity <n>", "affinity", parseIntOption, 0).option("--dry-run", "preview without writing").action(async (from, to, options) => {
   const project = await loadProject(process.cwd());
   const next = relationFileSchema.parse({ from, to, kind: options.kind, trust: options.trust, affinity: options.affinity });
   const relations = project.relations.filter((item) => !(item.from === from && item.to === to)).concat([next]);
+  if (options.dryRun) {
+    output({ before: project.relations, after: relations });
+    return;
+  }
   await writeJson(join(process.cwd(), SOCIETY_DIR, "relations.json"), relations);
   output(next, `Set relation ${from}->${to}`);
 });
@@ -280,9 +322,13 @@ entity.command("update").argument("<id>").argument("<jsonPatch>").action(async (
 
 const worldCommand = program.command("world").description("manage world");
 worldCommand.command("show").action(async () => output((await loadProject(process.cwd())).world));
-worldCommand.command("set").argument("<path>").argument("<jsonValue>").action(async (path, jsonValue) => {
+worldCommand.command("set").argument("<path>").argument("<jsonValue>").option("--dry-run", "preview without writing").action(async (path, jsonValue, options) => {
   const project = await loadProject(process.cwd());
   const next = setPath(project.world, path, JSON.parse(jsonValue));
+  if (options.dryRun) {
+    output({ before: project.world, after: next });
+    return;
+  }
   await writeJson(join(process.cwd(), SOCIETY_DIR, "world.json"), next);
   output(next, `Updated world.${path}`);
 });

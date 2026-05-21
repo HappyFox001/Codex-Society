@@ -4,6 +4,60 @@ TypeScript SDK for running a multi-agent social simulation outside Codex Core.
 
 The current implementation follows route one from the design note: Codex or any LLM runtime is treated as a replaceable agent executor, while the simulator owns world state, ticks, observation projection, events, memory, relations, and action validation.
 
+## CLI Quick Start
+
+```bash
+npm install
+npm run build
+npm run cli -- init --template campus
+npm run cli -- doctor
+npm run cli -- run --ticks 5 --backend static
+npm run cli -- report
+```
+
+After `npm run build`, the package exposes two bin names:
+
+```text
+codex-society
+society
+```
+
+Core commands:
+
+```text
+codex-society init --template campus
+codex-society doctor
+codex-society run --ticks 5 --backend static --save
+codex-society observe alice --json
+codex-society report <run-id>
+codex-society replay <run-id>
+codex-society export <run-id> --format json
+codex-society serve --backend codex --port 8787
+codex-society run --ticks 5 --gateway http://127.0.0.1:8787
+```
+
+Project layout created by `init`:
+
+```text
+.society/
+  manifest.json
+  config.json
+  runs/
+  logs/
+  status/
+society/
+  world.json
+  agents/
+  relations.json
+  entities.json
+  goals.json
+  tools.json
+  scenarios/
+SOCIETY_GUIDE.md
+```
+
+Run artifacts are stored under `.society/runs/<run-id>/` as JSON/JSONL/Markdown files, so CLI runs are recoverable and scriptable without a frontend.
+
 ## Structure
 
 ```text
@@ -16,10 +70,17 @@ src/core
 
 src/runtime
   agent-runtime.ts  Runtime interface for LLM/Codex adapters
+  openai-compatible-runtime.ts
   rule-based-runtime.ts
 
-src/examples
-  run-society.ts    Backend script demo
+src/project
+  schemas.ts        Project file schemas
+  templates.ts      Built-in society templates
+  store.ts          Project loading and persistence
+  artifacts.ts      Run artifact contract
+
+src/cli
+  main.ts           CLI entrypoint
 ```
 
 ## Run

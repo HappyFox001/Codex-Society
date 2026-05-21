@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SimulationReport, WorldStateSnapshot } from "../core/types.js";
 import { META_DIR, writeJson } from "./store.js";
@@ -32,6 +32,25 @@ export async function startRun(root: string, manifest: RunManifest): Promise<str
   return dir;
 }
 
+export async function acquireRunLock(root: string, runId: string, clearStale = false): Promise<string> {
+  const dir = runDir(root, runId);
+  await mkdir(dir, { recursive: true });
+  const lockPath = join(dir, "run.lock");
+  if (clearStale) {
+    await rm(lockPath, { force: true });
+  }
+  const handle = await open(lockPath, "wx");
+  await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+  await handle.close();
+  return lockPath;
+}
+
+export async function releaseRunLock(lockPath: string | undefined): Promise<void> {
+  if (lockPath) {
+    await rm(lockPath, { force: true });
+  }
+}
+
 export async function writeTickArtifact(dir: string, report: SimulationReport, snapshot: WorldStateSnapshot): Promise<void> {
   await writeJson(join(dir, "ticks", `${report.tick}.json`), report);
   await mkdir(join(dir, "decisions", `${report.tick}`), { recursive: true });
@@ -42,6 +61,14 @@ export async function writeTickArtifact(dir: string, report: SimulationReport, s
   for (const event of report.events) {
     await appendFile(join(dir, "events.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
   }
+}
+
+export async function writeRunError(dir: string, error: unknown, context: Record<string, unknown> = {}): Promise<void> {
+  await appendFile(
+    join(dir, "errors.jsonl"),
+    `${JSON.stringify({ ts: new Date().toISOString(), message: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, ...context })}\n`,
+    "utf8",
+  );
 }
 
 export async function finishRun(dir: string, patch: Pick<RunManifest, "status" | "endedAt" | "error">): Promise<void> {
