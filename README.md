@@ -17,22 +17,27 @@ This opens the simulation target workbench:
 
 ```text
 Codex Society
-Simulation target workbench
-Use the menu to run an existing target or create a new target template.
+Multi-agent simulation workbench
 
-Choose action
-  1  Simulate target
-  2  Create target template
-  3  List targets
-  4  Exit
-Select [1]:
+Runtime  Codex full-access
+Targets  1 available
+Runs     runs/
+Latest   trump-china-previsit / run_...
+
+? What do you want to do?
+> Run a simulation
+  Create a simulation target
+  Browse targets
+  Browse recent runs
+  Exit
 ```
 
 Menu flow:
 
 ```text
-Simulate target -> choose a target from simulations/ -> choose ticks -> run
-Create target template -> enter id/title/description -> write simulations/<id>/
+Run a simulation -> choose a target card -> confirm run plan -> live tick/agent progress -> Chinese REPORT.md
+Create a simulation target -> enter id/title/description -> write simulations/<id>/
+Browse recent runs -> inspect saved runs under runs/<target-id>/<run-id>/
 ```
 
 Command mode remains available for automation:

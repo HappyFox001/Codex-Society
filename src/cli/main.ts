@@ -6,6 +6,10 @@ import { stdin as input, stdout as outputStream } from "node:process";
 import { mkdir, readFile, readdir, rm, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { select, input as promptInput, confirm, number as promptNumber } from "@inquirer/prompts";
+import boxen from "boxen";
+import Table from "cli-table3";
+import ora, { type Ora } from "ora";
 import {
   CodexCliBackend,
   CodexCliRuntime,
@@ -306,6 +310,7 @@ program.command("shell").description("open interactive Society Shell").action(st
 class CliRunProgress {
   private readonly agents: Map<string, { name: string; role: string }>;
   private startedAt = 0;
+  private spinner?: Ora;
 
   constructor(agents: Array<{ id: string; name: string; role: string }>) {
     this.agents = new Map(agents.map((agent) => [agent.id, { name: agent.name, role: agent.role }]));
@@ -313,52 +318,70 @@ class CliRunProgress {
 
   runStart(event: { runId: string; backend: string; model: string; ticks: number; dir: string }): void {
     this.startedAt = Date.now();
-    console.log(pc.bold("Run started"));
-    console.log(`  id:      ${event.runId}`);
-    console.log(`  runtime: ${event.backend} / ${event.model}`);
-    console.log(`  ticks:   ${event.ticks}`);
-    console.log(`  output:  ${event.dir}`);
-    console.log("");
+    console.log(boxen([
+      pc.bold("Run started"),
+      "",
+      `${pc.dim("id")}      ${event.runId}`,
+      `${pc.dim("runtime")} ${event.backend} / ${event.model}`,
+      `${pc.dim("ticks")}   ${event.ticks}`,
+      `${pc.dim("output")}  ${event.dir}`,
+    ].join("\n"), { padding: 1, borderColor: "cyan", borderStyle: "round" }));
   }
 
   tickStart(tick: number, total: number): void {
-    console.log(pc.bold(`Tick ${tick}/${total}`));
+    console.log("");
+    console.log(pc.bold(pc.cyan(`Tick ${tick}/${total}`)));
   }
 
   agentStart(event: { agentId: string }): void {
     const agent = this.agents.get(event.agentId);
     const label = agent ? `${agent.name} (${agent.role})` : event.agentId;
-    console.log(`  ${pc.cyan("agent")} ${label}`);
+    this.spinner?.stop();
+    this.spinner = ora({ text: `Agent turn: ${label}`, color: "cyan" }).start();
   }
 
   agentDecision(event: { decision: AgentDecision; events: WorldEvent[] }): void {
     const actionTypes = summarizeActionTypes(event.decision.actions.map((action) => action.type));
     const thought = truncate(event.decision.thought.replace(/\s+/g, " "), 140);
-    console.log(`    ${pc.green("decision")} ${thought}`);
-    console.log(`    ${pc.dim("actions")}  ${actionTypes || "none"}  ${pc.dim(`events ${event.events.length}`)}`);
+    this.spinner?.succeed(`Decision: ${thought}`);
+    this.spinner = undefined;
+    console.log(`  ${pc.dim("actions")} ${actionTypes || "none"}  ${pc.dim(`events ${event.events.length}`)}`);
+    const changes = summarizeWorldEvents(event.events);
+    if (changes.length) console.log(`  ${pc.dim("changes")} ${changes.join("; ")}`);
   }
 
   agentError(event: { agentId: string; error: unknown }): void {
-    console.log(`    ${pc.red("error")} ${event.agentId}: ${truncate(errorMessage(event.error), 180)}`);
+    this.spinner?.fail(`Agent failed: ${event.agentId}`);
+    this.spinner = undefined;
+    console.log(`  ${pc.red("error")} ${truncate(errorMessage(event.error), 180)}`);
   }
 
   tickEnd(tick: number, eventCount: number): void {
-    console.log(`  ${pc.green("tick complete")} ${tick} ${pc.dim(`events ${eventCount}`)}`);
+    console.log(pc.green(`Tick ${tick} complete`) + pc.dim(` / events ${eventCount}`));
     console.log("");
   }
 
   runEnd(event: { runId: string; dir: string; interrupted: boolean }): void {
+    this.spinner?.stop();
+    this.spinner = undefined;
     const elapsed = ((Date.now() - this.startedAt) / 1000).toFixed(1);
     const status = event.interrupted ? pc.yellow("interrupted") : pc.green("completed");
-    console.log(`${pc.bold("Run")} ${status} ${event.runId} ${pc.dim(`${elapsed}s`)}`);
-    console.log(`Artifacts: ${event.dir}`);
+    console.log(boxen([
+      `${pc.bold("Run")} ${status}`,
+      "",
+      `${pc.dim("id")}        ${event.runId}`,
+      `${pc.dim("duration")}  ${elapsed}s`,
+      `${pc.dim("artifacts")} ${event.dir}`,
+    ].join("\n"), { padding: 1, borderColor: event.interrupted ? "yellow" : "green", borderStyle: "round" }));
   }
 
   reportStart(): void {
-    console.log(pc.bold("Generating final report"));
+    this.spinner = ora({ text: "Generating Chinese final report", color: "magenta" }).start();
   }
 
   runFailed(error: unknown): void {
+    this.spinner?.fail("Run failed");
+    this.spinner = undefined;
     const elapsed = this.startedAt ? ` ${pc.dim(`${((Date.now() - this.startedAt) / 1000).toFixed(1)}s`)}` : "";
     console.log(`${pc.bold("Run")} ${pc.red("failed")}${elapsed}`);
     console.log(pc.red(truncate(errorMessage(error), 500)));
@@ -459,8 +482,8 @@ async function runSimulation(options: {
 }
 
 async function startShell(): Promise<void> {
-  printBanner();
   if (!process.stdin.isTTY) {
+    printBanner();
     const raw = await readStdin();
     for (const line of raw.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
       console.log(pc.cyan(`society> ${line}`));
@@ -473,42 +496,52 @@ async function startShell(): Promise<void> {
     }
     return;
   }
-  const rl = createInterface({ input, output: outputStream });
-  try {
-    for (;;) {
-      const action = await chooseMainAction(rl);
-      if (action === "exit") break;
-      try {
-        if (action === "simulate") {
-          const target = await chooseSimulationTarget(rl);
-          const ticks = await chooseTicks(rl, target);
-          await simulateTarget(target, ticks);
-        } else if (action === "create") {
-          await createSimulationTarget(undefined, rl);
-        } else if (action === "targets") {
-          await printSimulationTargets();
-        } else if (action.startsWith("/")) {
-          await handleShellLine(action);
-        }
-      } catch (error) {
-        console.log(pc.red(errorMessage(error)));
+  await renderWorkbenchHome();
+  for (;;) {
+    const action = await chooseMainAction();
+    if (action === "exit") break;
+    try {
+      if (action === "simulate") {
+        const target = await chooseSimulationTarget();
+        const ticks = await chooseTicks(undefined, target);
+        if (await confirmRunPlan(target, ticks)) await simulateTarget(target, ticks);
+      } else if (action === "create") {
+        await createSimulationTarget();
+      } else if (action === "targets") {
+        await printSimulationTargets();
+      } else if (action === "runs") {
+        await printRecentRuns();
+      } else if (action.startsWith("/")) {
+        await handleShellLine(action);
       }
+    } catch (error) {
+      console.log(pc.red(errorMessage(error)));
     }
-  } finally {
-    rl.close();
   }
 }
 
-type MainAction = "simulate" | "create" | "targets" | "exit" | `/${string}`;
+type MainAction = "simulate" | "create" | "targets" | "runs" | "exit" | `/${string}`;
 
-async function chooseMainAction(rl: ReturnType<typeof createInterface>): Promise<MainAction> {
+async function chooseMainAction(rl?: ReturnType<typeof createInterface>): Promise<MainAction> {
+  if (process.stdin.isTTY && !rl) {
+    return select<MainAction>({
+      message: "What do you want to do?",
+      choices: [
+        { name: "Run a simulation", value: "simulate", description: "Choose a target and start a Codex-backed run" },
+        { name: "Create a simulation target", value: "create", description: "Create a template under simulations/" },
+        { name: "Browse targets", value: "targets", description: "Show configured targets" },
+        { name: "Browse recent runs", value: "runs", description: "Show saved runs under runs/" },
+        { name: "Exit", value: "exit" },
+      ],
+    });
+  }
   console.log("");
   console.log(pc.bold("Choose action"));
   console.log(`  ${pc.cyan("1")}  Simulate target`);
   console.log(`  ${pc.cyan("2")}  Create target template`);
   console.log(`  ${pc.cyan("3")}  List targets`);
   console.log(`  ${pc.cyan("4")}  Exit`);
-  const answer = (await rl.question("Select [1]: ")).trim();
+  const answer = (await rl!.question("Select [1]: ")).trim();
   if (!answer || answer === "1" || /^simulate$/i.test(answer)) return "simulate";
   if (answer === "2" || /^create$/i.test(answer)) return "create";
   if (answer === "3" || /^targets?$/i.test(answer)) return "targets";
@@ -636,6 +669,20 @@ function printBanner(): void {
   console.log("Use the menu to run an existing target or create a new target template.");
 }
 
+async function renderWorkbenchHome(): Promise<void> {
+  const targets = await listSimulationTargets();
+  const latest = await latestSavedRun();
+  console.log(boxen([
+    pc.bold("Codex Society"),
+    pc.dim("Multi-agent simulation workbench"),
+    "",
+    `${pc.dim("Runtime")}  Codex full-access`,
+    `${pc.dim("Targets")}  ${targets.length} available`,
+    `${pc.dim("Runs")}     ${defaultRunsDir()}`,
+    `${pc.dim("Latest")}   ${latest ? `${latest.targetId} / ${latest.runId}` : "none"}`,
+  ].join("\n"), { padding: 1, margin: 0, borderColor: "cyan", borderStyle: "round" }));
+}
+
 function printShellHelp(): void {
   console.log([
     "Menu actions:",
@@ -647,7 +694,18 @@ function printShellHelp(): void {
   ].join("\n"));
 }
 
-async function listSimulationTargets(): Promise<Array<{ id: string; description: string }>> {
+interface SimulationTargetSummary {
+  id: string;
+  description: string;
+  agents: number;
+  defaultTicks: number;
+  backend: string;
+  model: string;
+  latestRun?: string;
+  coreQuestion?: string;
+}
+
+async function listSimulationTargets(): Promise<SimulationTargetSummary[]> {
   try {
     const names = (await readdir(defaultTargetsDir(), { withFileTypes: true }))
       .filter((entry) => entry.isDirectory())
@@ -656,7 +714,16 @@ async function listSimulationTargets(): Promise<Array<{ id: string; description:
     const targets = [];
     for (const id of names) {
       const template = await readJson(join(defaultTargetsDir(), id, "template.json")) as SocietyTemplate;
-      targets.push({ id, description: template.description });
+      targets.push({
+        id,
+        description: template.description,
+        agents: template.agents.length,
+        defaultTicks: template.scenarios[0]?.ticks ?? 6,
+        backend: template.config.backend,
+        model: template.config.model,
+        latestRun: await latestRunForTarget(id),
+        coreQuestion: typeof template.world.state.planningQuestion === "string" ? template.world.state.planningQuestion : undefined,
+      });
     }
     return targets;
   } catch {
@@ -670,7 +737,16 @@ async function printSimulationTargets(): Promise<void> {
     console.log(`No simulation targets found in ${defaultTargetsDir()}.`);
     return;
   }
-  console.table(targets);
+  const table = new Table({
+    head: ["Target", "Agents", "Ticks", "Runtime", "Latest run", "Description"],
+    style: { head: ["cyan"] },
+    wordWrap: true,
+    colWidths: [24, 8, 8, 18, 24, 58],
+  });
+  for (const target of targets) {
+    table.push([target.id, target.agents, target.defaultTicks, `${target.backend}/${target.model}`, target.latestRun ?? "-", target.description]);
+  }
+  console.log(table.toString());
 }
 
 async function chooseSimulationTarget(rl?: ReturnType<typeof createInterface>): Promise<string> {
@@ -680,6 +756,18 @@ async function chooseSimulationTarget(rl?: ReturnType<typeof createInterface>): 
   }
   if (!process.stdin.isTTY) {
     return targets[0].id;
+  }
+  if (!rl) {
+    const targetId = await select<string>({
+      message: "Choose a simulation target",
+      choices: targets.map((target) => ({
+        name: `${target.id}  ${pc.dim(`${target.agents} agents / ${target.defaultTicks} ticks`)}`,
+        value: target.id,
+        description: target.coreQuestion ?? target.description,
+      })),
+    });
+    await printTargetBrief(targetId);
+    return targetId;
   }
   console.log("");
   console.log(pc.bold("Executable targets"));
@@ -704,9 +792,18 @@ async function readTargetChoice(rl: ReturnType<typeof createInterface>, targets:
   throw new Error(`Unknown target: ${answer}`);
 }
 
-async function chooseTicks(rl: ReturnType<typeof createInterface>, targetId: string): Promise<number> {
+async function chooseTicks(rl: ReturnType<typeof createInterface> | undefined, targetId: string): Promise<number> {
   const fallback = await defaultTicksForTarget(targetId);
-  const answer = (await rl.question(`Ticks [${fallback}]: `)).trim();
+  if (process.stdin.isTTY && !rl) {
+    const answer = await promptNumber({
+      message: "Ticks",
+      default: fallback,
+      min: 1,
+      required: true,
+    });
+    return Number(answer ?? fallback);
+  }
+  const answer = (await rl!.question(`Ticks [${fallback}]: `)).trim();
   if (!answer) return fallback;
   const ticks = Number.parseInt(answer, 10);
   if (!Number.isFinite(ticks) || ticks <= 0) throw new Error("Ticks must be a positive integer.");
@@ -716,6 +813,75 @@ async function chooseTicks(rl: ReturnType<typeof createInterface>, targetId: str
 async function defaultTicksForTarget(targetId: string): Promise<number> {
   const template = await readJson(join(resolve(defaultTargetsDir(), targetId), "template.json")) as SocietyTemplate;
   return template.scenarios[0]?.ticks ?? 6;
+}
+
+async function printTargetBrief(targetId: string): Promise<void> {
+  const template = await readJson(join(resolve(defaultTargetsDir(), targetId), "template.json")) as SocietyTemplate;
+  const latest = await latestRunForTarget(targetId);
+  const agents = template.agents.map((agent) => `${agent.name} (${agent.role})`).join("\n");
+  console.log(boxen([
+    pc.bold(template.name),
+    "",
+    template.world.state.planningQuestion ? `${pc.dim("question")} ${String(template.world.state.planningQuestion)}` : template.description,
+    "",
+    `${pc.dim("agents")}   ${template.agents.length}`,
+    `${pc.dim("ticks")}    ${template.scenarios[0]?.ticks ?? 6}`,
+    `${pc.dim("runtime")}  ${template.config.backend} / ${template.config.model}`,
+    `${pc.dim("latest")}   ${latest ?? "none"}`,
+    "",
+    pc.dim("Agent roster"),
+    agents,
+  ].join("\n"), { padding: 1, borderColor: "cyan", borderStyle: "round" }));
+}
+
+async function confirmRunPlan(targetId: string, ticks: number): Promise<boolean> {
+  const template = await readJson(join(resolve(defaultTargetsDir(), targetId), "template.json")) as SocietyTemplate;
+  const runRoot = join(defaultRunsDir(), targetId);
+  console.log(boxen([
+    pc.bold("Run plan"),
+    "",
+    `${pc.dim("target")}  ${targetId}`,
+    `${pc.dim("question")} ${String(template.world.state.planningQuestion ?? template.description)}`,
+    `${pc.dim("agents")}  ${template.agents.length}`,
+    `${pc.dim("ticks")}   ${ticks}`,
+    `${pc.dim("runtime")} Codex full-access / ${template.config.model}`,
+    `${pc.dim("output")}  ${runRoot}`,
+  ].join("\n"), { padding: 1, borderColor: "yellow", borderStyle: "round" }));
+  return confirm({ message: "Start simulation?", default: true });
+}
+
+async function printRunComplete(destination: string): Promise<void> {
+  const manifest = await readJson(join(destination, "run.json")) as RunManifest;
+  const metrics = await readJson(join(destination, "metrics.json")) as { tick: number; eventCount: number; agentCount: number; relationCount: number };
+  console.log(boxen([
+    pc.bold("Simulation saved"),
+    "",
+    `${pc.dim("run")}      ${manifest.id}`,
+    `${pc.dim("ticks")}    ${metrics.tick}`,
+    `${pc.dim("agents")}   ${metrics.agentCount}`,
+    `${pc.dim("events")}   ${metrics.eventCount}`,
+    `${pc.dim("report")}   ${join(destination, "REPORT.md")}`,
+  ].join("\n"), { padding: 1, borderColor: "green", borderStyle: "round" }));
+  const preview = process.stdin.isTTY
+    ? await select<"summary" | "full" | "skip">({
+      message: "Report preview",
+      choices: [
+        { name: "Show summary", value: "summary" },
+        { name: "Show full report", value: "full" },
+        { name: "Skip", value: "skip" },
+      ],
+    })
+    : "full";
+  if (preview === "skip") return;
+  const report = await readFile(join(destination, "REPORT.md"), "utf8");
+  console.log(preview === "summary" ? firstReportSections(report, 2) : report);
+}
+
+function firstReportSections(report: string, count: number): string {
+  const lines = report.split(/\r?\n/);
+  const indexes = lines.map((line, index) => line.startsWith("# ") || line.startsWith("## ") ? index : -1).filter((index) => index >= 0);
+  const end = indexes[count] ?? Math.min(lines.length, 80);
+  return lines.slice(0, end).join("\n");
 }
 
 async function simulateTarget(targetId: string, ticks: number): Promise<void> {
@@ -729,7 +895,14 @@ async function simulateTarget(targetId: string, ticks: number): Promise<void> {
   const previous = process.cwd();
   process.chdir(workspace);
   try {
-    console.log(`Running ${pc.green(template.name)} with ${pc.green("Codex full-access")} in ${workspace}`);
+    console.log(boxen([
+      pc.bold(`Running ${template.name}`),
+      "",
+      `${pc.dim("runtime")} Codex full-access`,
+      `${pc.dim("ticks")}   ${ticks}`,
+      `${pc.dim("workspace")} ${workspace}`,
+      `${pc.dim("output")}  ${runRoot}`,
+    ].join("\n"), { padding: 1, borderColor: "blue", borderStyle: "round" }));
     await runDoctorForShell();
     console.log("");
     await runSimulation({ ticks, backend: "codex", model: template.config.model, stream: true });
@@ -740,8 +913,7 @@ async function simulateTarget(targetId: string, ticks: number): Promise<void> {
       const destination = join(runRoot, id);
       await rm(destination, { recursive: true, force: true });
       await rename(source, destination);
-      console.log(`Saved run artifacts to ${pc.green(destination)}`);
-      console.log(await readFile(join(destination, "REPORT.md"), "utf8"));
+      await printRunComplete(destination);
     }
   } finally {
     process.chdir(previous);
@@ -772,11 +944,20 @@ async function createSimulationTarget(idFromArgs?: string, rl?: ReturnType<typeo
   await mkdir(dir, { recursive: true });
   await writeJson(join(dir, "template.json"), target);
   await writeFile(join(dir, "README.md"), `# ${title}\n\n${description}\n\nRun with:\n\n\`\`\`text\n/simulate ${id}\n\`\`\`\n`, "utf8");
-  console.log(`Created simulation target ${pc.green(id)} at ${dir}`);
+  console.log(boxen([
+    pc.bold("Target created"),
+    "",
+    `${pc.dim("id")}   ${id}`,
+    `${pc.dim("path")} ${dir}`,
+    `${pc.dim("next")} Edit template.json, then run it from the workbench`,
+  ].join("\n"), { padding: 1, borderColor: "green", borderStyle: "round" }));
 }
 
 async function promptText(label: string, fallback?: string, rl?: ReturnType<typeof createInterface>): Promise<string> {
   if (!process.stdin.isTTY) return fallback ?? "";
+  if (!rl) {
+    return promptInput({ message: label, default: fallback });
+  }
   if (rl) {
     const suffix = fallback ? ` [${fallback}]` : "";
     const answer = (await rl.question(`${label}${suffix}: `)).trim();
@@ -802,6 +983,60 @@ function defaultRunsDir(): string {
   return process.env.CODEX_SOCIETY_RUNS_DIR
     ? resolve(process.env.CODEX_SOCIETY_RUNS_DIR)
     : resolve(PACKAGE_ROOT, DEFAULT_RUNS_DIR);
+}
+
+async function latestRunForTarget(targetId: string): Promise<string | undefined> {
+  try {
+    return (await readdir(join(defaultRunsDir(), targetId), { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("run_"))
+      .map((entry) => entry.name)
+      .sort()
+      .at(-1);
+  } catch {
+    return undefined;
+  }
+}
+
+async function latestSavedRun(): Promise<{ targetId: string; runId: string } | undefined> {
+  try {
+    const targets = (await readdir(defaultRunsDir(), { withFileTypes: true })).filter((entry) => entry.isDirectory());
+    const runs = await Promise.all(targets.map(async (target) => {
+      const runId = await latestRunForTarget(target.name);
+      return runId ? { targetId: target.name, runId } : undefined;
+    }));
+    return runs.filter((run): run is { targetId: string; runId: string } => Boolean(run)).sort((a, b) => a.runId.localeCompare(b.runId)).at(-1);
+  } catch {
+    return undefined;
+  }
+}
+
+async function printRecentRuns(): Promise<void> {
+  const rows: Array<[string, string, string, string, string]> = [];
+  try {
+    const targetEntries = (await readdir(defaultRunsDir(), { withFileTypes: true })).filter((entry) => entry.isDirectory());
+    for (const target of targetEntries) {
+      const runEntries = (await readdir(join(defaultRunsDir(), target.name), { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("run_"))
+        .map((entry) => entry.name)
+        .sort()
+        .slice(-5);
+      for (const runId of runEntries) {
+        const dir = join(defaultRunsDir(), target.name, runId);
+        const manifest = await readJson(join(dir, "run.json")) as RunManifest;
+        const metrics = await readJson(join(dir, "metrics.json")).catch(() => undefined) as { tick?: number; eventCount?: number } | undefined;
+        rows.push([target.name, runId, manifest.status, String(metrics?.tick ?? "-"), String(metrics?.eventCount ?? "-")]);
+      }
+    }
+  } catch {
+    // No runs yet.
+  }
+  if (rows.length === 0) {
+    console.log(pc.dim("No saved runs yet."));
+    return;
+  }
+  const table = new Table({ head: ["Target", "Run", "Status", "Ticks", "Events"], style: { head: ["cyan"] } });
+  for (const row of rows.sort((a, b) => b[1].localeCompare(a[1])).slice(0, 12)) table.push(row);
+  console.log(table.toString());
 }
 
 async function chooseTemplate(): Promise<string> {
@@ -835,6 +1070,26 @@ function summarizeActionTypes(types: string[]): string {
   const counts = new Map<string, number>();
   for (const type of types) counts.set(type, (counts.get(type) ?? 0) + 1);
   return [...counts.entries()].map(([type, count]) => (count === 1 ? type : `${type}x${count}`)).join(", ");
+}
+
+function summarizeWorldEvents(events: WorldEvent[]): string[] {
+  const summaries: string[] = [];
+  for (const event of events.slice(0, 4)) {
+    if (event.type === "message") {
+      const scope = event.targetId ? `to ${event.targetId}` : event.visibility;
+      summaries.push(`message ${scope}`);
+    } else if (event.type === "entity.updated") {
+      summaries.push(`entity ${event.targetId ?? event.payload.entityId ?? "updated"}`);
+    } else if (event.type === "relation.updated") {
+      summaries.push(`relation ${event.actorId ?? "agent"} -> ${event.targetId ?? "target"}`);
+    } else if (event.type === "memory.remembered") {
+      summaries.push(`memory ${event.actorId ?? "agent"}`);
+    } else {
+      summaries.push(event.type);
+    }
+  }
+  if (events.length > 4) summaries.push(`+${events.length - 4} more`);
+  return summaries;
 }
 
 function truncate(value: string, max: number): string {
