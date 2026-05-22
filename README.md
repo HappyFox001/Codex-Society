@@ -70,7 +70,7 @@ For example:
 runs/trump-china-previsit/run_20260521_064849/
 ```
 
-The main human-readable output is `REPORT.md`. For Codex-backed runs, this report is generated after the simulation by reading the run artifacts and answering the target's core objective with concrete evidence from agent decisions, events, relations and state changes.
+The main human-readable output is `REPORT.md`. For Codex-backed runs, this report is generated after the simulation by reading the run artifacts and answering the target's core objective in Simplified Chinese with concrete evidence from agent decisions, events, relations and state changes.
 
 After `pnpm run build`, the package exposes two bin names:
 
@@ -115,7 +115,7 @@ SOCIETY_GUIDE.md
 
 Interactive target runs are stored under `runs/<target-id>/<run-id>/` as JSON/JSONL/Markdown files, so CLI runs are recoverable and scriptable without a frontend. The `runs/` directory is ignored by git.
 
-For Codex-backed target runs, `REPORT.md` is an AI-generated result report. The raw evidence remains available in `events.jsonl`, `ticks/*.json`, `decisions/*/*.json`, `timeline.json`, `graph.json`, and `metrics.json`.
+For Codex-backed target runs, `REPORT.md` is a Simplified Chinese result report. The raw evidence remains available in `events.jsonl`, `ticks/*.json`, `decisions/*/*.json`, `timeline.json`, `graph.json`, and `metrics.json`.
 
 ## Structure
 

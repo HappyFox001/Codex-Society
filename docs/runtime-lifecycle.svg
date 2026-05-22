@@ -1,0 +1,135 @@
+<svg width="1280" height="760" viewBox="0 0 1280 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#314158"/>
+    </marker>
+    <filter id="shadow" x="-8%" y="-12%" width="116%" height="128%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { font: 700 32px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .section-title { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #0f172a; }
+      .box-title { font: 700 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #111827; }
+      .box-text { font: 400 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #475569; }
+      .small { font: 400 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #64748b; }
+      .badge { font: 700 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #ffffff; }
+      .panel { fill: #ffffff; stroke: #dbe3ef; stroke-width: 1.5; rx: 16; filter: url(#shadow); }
+      .config { fill: #edf7ff; stroke: #93c5fd; }
+      .tick { fill: #fff7ed; stroke: #fdba74; }
+      .loop { fill: #f0fdf4; stroke: #86efac; }
+      .output { fill: #f8f5ff; stroke: #c4b5fd; }
+      .inner { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; rx: 12; }
+      .arrow { stroke: #314158; stroke-width: 2.2; marker-end: url(#arrow); }
+      .soft-arrow { stroke: #64748b; stroke-width: 1.8; marker-end: url(#arrow); stroke-dasharray: 5 5; }
+      .loop-arrow { stroke: #15803d; stroke-width: 2.2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1280" height="760"/>
+
+  <text class="title" x="64" y="62">Codex Society 运行生命周期</text>
+  <text class="subtitle" x="64" y="92">从模拟目标配置，到 tick 内部执行、循环推进、产物保存与最终报告生成</text>
+
+  <rect class="panel config" x="64" y="132" width="250" height="500" rx="18"/>
+  <rect x="88" y="156" width="74" height="24" rx="12" fill="#2563eb"/>
+  <text class="badge" x="107" y="173">配置</text>
+  <text class="section-title" x="88" y="214">Simulation Target</text>
+  <rect class="inner" x="88" y="238" width="202" height="68" rx="12"/>
+  <text class="box-title" x="106" y="264">目标定义</text>
+  <text class="box-text" x="106" y="286">核心问题、背景事实、场景 tick</text>
+  <rect class="inner" x="88" y="322" width="202" height="78" rx="12"/>
+  <text class="box-title" x="106" y="348">Agent 配置</text>
+  <text class="box-text" x="106" y="370">身份、角色、目标、记忆、权限</text>
+  <rect class="inner" x="88" y="416" width="202" height="78" rx="12"/>
+  <text class="box-title" x="106" y="442">世界状态</text>
+  <text class="box-text" x="106" y="464">实体、关系、公开事实、初始状态</text>
+  <rect class="inner" x="88" y="510" width="202" height="74" rx="12"/>
+  <text class="box-title" x="106" y="536">运行入口</text>
+  <text class="box-text" x="106" y="558">CLI 选择目标并设置 tick 数</text>
+
+  <line class="arrow" x1="314" y1="382" x2="365" y2="382"/>
+
+  <rect class="panel tick" x="366" y="132" width="360" height="500" rx="18"/>
+  <rect x="390" y="156" width="104" height="24" rx="12" fill="#ea580c"/>
+  <text class="badge" x="410" y="173">Tick 内部</text>
+  <text class="section-title" x="390" y="214">每个 tick 中的工作方式</text>
+
+  <rect class="inner" x="390" y="238" width="312" height="58" rx="12"/>
+  <text class="box-title" x="410" y="262">1. 调度 Agent</text>
+  <text class="box-text" x="410" y="282">按 round-robin 或其他策略选择本轮行动者</text>
+
+  <rect class="inner" x="390" y="314" width="312" height="64" rx="12"/>
+  <text class="box-title" x="410" y="340">2. 生成 Observation</text>
+  <text class="box-text" x="410" y="360">只投影该 Agent 可见的信息、关系和事件</text>
+
+  <rect class="inner" x="390" y="396" width="312" height="64" rx="12"/>
+  <text class="box-title" x="410" y="422">3. 调用 Runtime</text>
+  <text class="box-text" x="410" y="442">Codex CLI 返回结构化 decision 与 actions</text>
+
+  <rect class="inner" x="390" y="478" width="312" height="64" rx="12"/>
+  <text class="box-title" x="410" y="504">4. 校验并应用 Action</text>
+  <text class="box-text" x="410" y="524">检查 schema / 权限，写入世界状态</text>
+
+  <rect class="inner" x="390" y="560" width="312" height="48" rx="12"/>
+  <text class="box-title" x="410" y="590">5. 生成事件与快照</text>
+
+  <line class="soft-arrow" x1="546" y1="296" x2="546" y2="313"/>
+  <line class="soft-arrow" x1="546" y1="378" x2="546" y2="395"/>
+  <line class="soft-arrow" x1="546" y1="460" x2="546" y2="477"/>
+  <line class="soft-arrow" x1="546" y1="542" x2="546" y2="559"/>
+
+  <line class="arrow" x1="726" y1="382" x2="777" y2="382"/>
+
+  <rect class="panel loop" x="778" y="132" width="214" height="500" rx="18"/>
+  <rect x="802" y="156" width="74" height="24" rx="12" fill="#16a34a"/>
+  <text class="badge" x="821" y="173">循环</text>
+  <text class="section-title" x="802" y="214">状态闭环</text>
+
+  <circle cx="885" cy="314" r="74" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text class="box-title" x="849" y="296">World</text>
+  <text class="box-title" x="848" y="318">State</text>
+  <text class="small" x="830" y="344">events / memory</text>
+
+  <path class="loop-arrow" d="M 885 232 C 970 238, 970 388, 889 396"/>
+  <path class="loop-arrow" d="M 884 396 C 800 388, 800 238, 879 232"/>
+
+  <rect class="inner" x="802" y="452" width="166" height="70" rx="12"/>
+  <text class="box-title" x="824" y="478">下一轮输入</text>
+  <text class="box-text" x="824" y="500">更新后的状态会影响</text>
+  <text class="box-text" x="824" y="518">后续 Agent 观察</text>
+
+  <rect class="inner" x="802" y="542" width="166" height="52" rx="12"/>
+  <text class="box-title" x="824" y="574">直到 tick 结束</text>
+
+  <line class="arrow" x1="992" y1="382" x2="1043" y2="382"/>
+
+  <rect class="panel output" x="1044" y="132" width="172" height="500" rx="18"/>
+  <rect x="1068" y="156" width="74" height="24" rx="12" fill="#7c3aed"/>
+  <text class="badge" x="1087" y="173">输出</text>
+  <text class="section-title" x="1068" y="214">Artifacts</text>
+
+  <rect class="inner" x="1068" y="238" width="124" height="58" rx="12"/>
+  <text class="box-title" x="1084" y="262">REPORT.md</text>
+  <text class="small" x="1084" y="282">目标导向报告</text>
+
+  <rect class="inner" x="1068" y="314" width="124" height="58" rx="12"/>
+  <text class="box-title" x="1084" y="338">events.jsonl</text>
+  <text class="small" x="1084" y="358">完整事件流</text>
+
+  <rect class="inner" x="1068" y="390" width="124" height="58" rx="12"/>
+  <text class="box-title" x="1084" y="414">ticks/*.json</text>
+  <text class="small" x="1084" y="434">每轮决策</text>
+
+  <rect class="inner" x="1068" y="466" width="124" height="58" rx="12"/>
+  <text class="box-title" x="1084" y="490">graph.json</text>
+  <text class="small" x="1084" y="510">关系网络</text>
+
+  <rect class="inner" x="1068" y="542" width="124" height="58" rx="12"/>
+  <text class="box-title" x="1084" y="566">metrics.json</text>
+  <text class="small" x="1084" y="586">运行指标</text>
+
+  <path class="soft-arrow" d="M 1130 632 C 1130 674, 980 696, 756 696 C 496 696, 190 674, 190 632"/>
+  <text class="small" x="467" y="722">产物可用于复盘、报告展示、前端可视化和后续 run 对比</text>
+</svg>
